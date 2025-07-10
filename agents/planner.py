@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Dict, Any, Optional
 from rich.console import Console
 from rich.panel import Panel
@@ -13,6 +14,25 @@ class PlannerAgent:
         self.ollama_client = ollama_client
         self.model = "llama2:7b-chat"
         self.agent_name = "Planner (Product Manager)"
+    
+    def _clean_json_string(self, json_str: str) -> str:
+        """Clean control characters and fix common JSON issues."""
+        # Remove problematic control characters except for standard whitespace
+        json_str = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', json_str)
+        
+        # Try to parse as-is first
+        try:
+            json.loads(json_str)
+            return json_str
+        except json.JSONDecodeError:
+            # If parsing fails, try to fix common issues
+            # Remove any trailing commas before closing braces/brackets
+            json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+            
+            # Fix unescaped newlines and tabs in strings
+            json_str = json_str.replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+            
+            return json_str
         
     def load_prompt(self) -> str:
         """Load the planner prompt from file."""
@@ -69,67 +89,173 @@ Respond with a comprehensive JSON specification following the format specified i
         
         console.print("[yellow]Generating technical specifications...[/yellow]")
         
-        # Generate specifications using Ollama
-        response = self.ollama_client.generate(
-            model=self.model,
-            prompt=user_prompt,
-            system=system_prompt,
-            temperature=0.3  # Lower temperature for more consistent technical specs
-        )
+        # Try multiple times with different settings if JSON parsing fails
+        for attempt in range(3):
+            temperature = 0.3 + (attempt * 0.1)  # Start at 0.3, then 0.4, 0.5
+            
+            if attempt > 0:
+                console.print(f"[yellow]Retry attempt {attempt + 1}/3 with temperature {temperature}[/yellow]")
+            
+            # Generate specifications using Ollama
+            response = self.ollama_client.generate(
+                model=self.model,
+                prompt=user_prompt,
+                system=system_prompt,
+                temperature=temperature
+            )
+            
+            if not response:
+                console.print("[red]Failed to generate response from model[/red]")
+                continue
+            
+            # Try to parse the response
+            try:
+                # Clean up the response to extract JSON
+                response = response.strip()
+                if response.startswith("```json"):
+                    response = response[7:]
+                if response.endswith("```"):
+                    response = response[:-3]
+                if response.startswith("```"):
+                    response = response[3:]
+                
+                # Find the JSON object boundaries
+                response = response.strip()
+                
+                # Try to find the start and end of the JSON object
+                start_idx = response.find('{')
+                if start_idx == -1:
+                    raise json.JSONDecodeError("No JSON object found", response, 0)
+                
+                # Find the matching closing brace
+                brace_count = 0
+                end_idx = start_idx
+                
+                for i, char in enumerate(response[start_idx:], start_idx):
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_idx = i
+                            break
+                
+                # Extract just the JSON part
+                json_response = response[start_idx:end_idx + 1]
+                
+                # Clean up control characters that might cause JSON parsing issues
+                json_response = self._clean_json_string(json_response)
+                
+                technical_spec = json.loads(json_response)
+                
+                # Validate the specification has required fields
+                required_fields = ["project_overview", "technical_stack", "features", "data_models"]
+                for field in required_fields:
+                    if field not in technical_spec:
+                        console.print(f"[yellow]Warning: Missing required field '{field}' in technical specification[/yellow]")
+                
+                console.print("[green]✅ Technical specifications generated successfully[/green]")
+                return technical_spec
+                
+            except json.JSONDecodeError as e:
+                console.print(f"[yellow]Attempt {attempt + 1} failed: {e}[/yellow]")
+                if attempt == 2:  # Last attempt
+                    console.print(f"[red]Error parsing JSON response: {e}[/red]")
+                    console.print(f"[red]Response was: {response[:500]}...[/red]")
+                    break
+                continue
         
-        if not response:
-            console.print("[red]Failed to generate technical specifications[/red]")
-            return None
+        # If all attempts fail, try fallback
+        console.print("[yellow]All attempts failed. Creating fallback specification...[/yellow]")
         
-        # Parse the JSON response
         try:
-            # Clean up the response to extract JSON
-            response = response.strip()
-            if response.startswith("```json"):
-                response = response[7:]
-            if response.endswith("```"):
-                response = response[:-3]
-            if response.startswith("```"):
-                response = response[3:]
+            # Create a minimal valid technical spec as fallback
+            # Load the original project spec to extract basic info
+            with open(project_spec_path, "r") as f:
+                project_spec = json.load(f)
             
-            # Find the JSON object boundaries
-            response = response.strip()
+            fallback_spec = {
+                "project_overview": {
+                    "name": project_spec.get("project_name", "Web Application"),
+                    "description": project_spec.get("project_description", "A modern web application"),
+                    "target_audience": project_spec.get("target_audience", "General users"),
+                    "business_goals": ["Provide value to users", "Generate revenue"],
+                    "success_metrics": ["User engagement", "Conversion rate"]
+                },
+                "technical_stack": {
+                    "frontend": "Next.js 14 with TypeScript",
+                    "backend": "Next.js API Routes",
+                    "database": "PostgreSQL with Prisma",
+                    "authentication": "NextAuth.js",
+                    "deployment": "Vercel",
+                    "third_party_services": []
+                },
+                "features": [
+                    {
+                        "name": "User Authentication",
+                        "description": "Secure user login and registration",
+                        "priority": "high",
+                        "user_stories": ["As a user, I want to create an account"],
+                        "acceptance_criteria": ["User can register and login"],
+                        "estimated_complexity": "medium"
+                    }
+                ],
+                "data_models": [
+                    {
+                        "name": "User",
+                        "fields": [
+                            {"name": "id", "type": "string", "required": True, "description": "Unique identifier"},
+                            {"name": "email", "type": "string", "required": True, "description": "User email"},
+                            {"name": "name", "type": "string", "required": True, "description": "User name"}
+                        ],
+                        "relationships": []
+                    }
+                ],
+                "api_endpoints": [
+                    {
+                        "method": "GET",
+                        "path": "/api/auth/session",
+                        "description": "Get current user session",
+                        "parameters": [],
+                        "response": "User session data",
+                        "authentication_required": True
+                    }
+                ],
+                "pages_and_components": [
+                    {
+                        "page": "Home",
+                        "url": "/",
+                        "description": "Landing page",
+                        "components": ["Header", "Hero", "Footer"],
+                        "authentication_required": False
+                    }
+                ],
+                "file_structure": {
+                    "description": "Standard Next.js 14 project structure",
+                    "structure": "app/, components/, lib/, public/, styles/"
+                },
+                "development_phases": [
+                    {
+                        "phase": "Phase 1: Foundation",
+                        "description": "Set up basic structure and authentication",
+                        "features": ["Authentication", "Basic UI"],
+                        "estimated_time": "1-2 weeks"
+                    }
+                ],
+                "non_functional_requirements": {
+                    "performance": "Fast loading times, optimized for web vitals",
+                    "security": "Secure authentication, input validation",
+                    "scalability": "Horizontal scaling with cloud deployment",
+                    "accessibility": "WCAG 2.1 AA compliance",
+                    "seo": "SEO optimized with Next.js features"
+                }
+            }
             
-            # Try to find the start and end of the JSON object
-            start_idx = response.find('{')
-            if start_idx == -1:
-                raise json.JSONDecodeError("No JSON object found", response, 0)
+            console.print("[yellow]✅ Using fallback technical specification[/yellow]")
+            return fallback_spec
             
-            # Find the matching closing brace
-            brace_count = 0
-            end_idx = start_idx
-            
-            for i, char in enumerate(response[start_idx:], start_idx):
-                if char == '{':
-                    brace_count += 1
-                elif char == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        end_idx = i
-                        break
-            
-            # Extract just the JSON part
-            json_response = response[start_idx:end_idx + 1]
-            
-            technical_spec = json.loads(json_response)
-            
-            # Validate the specification has required fields
-            required_fields = ["project_overview", "technical_stack", "features", "data_models"]
-            for field in required_fields:
-                if field not in technical_spec:
-                    console.print(f"[yellow]Warning: Missing required field '{field}' in technical specification[/yellow]")
-            
-            console.print("[green]✅ Technical specifications generated successfully[/green]")
-            return technical_spec
-            
-        except json.JSONDecodeError as e:
-            console.print(f"[red]Error parsing JSON response: {e}[/red]")
-            console.print(f"[red]Response was: {response[:500]}...[/red]")
+        except Exception as fallback_error:
+            console.print(f"[red]Fallback specification creation failed: {fallback_error}[/red]")
             return None
     
     def save_technical_spec(self, technical_spec: Dict[str, Any], output_path: str = "data/technical_spec.json") -> bool:
