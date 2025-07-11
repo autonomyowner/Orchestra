@@ -1,8 +1,5 @@
 """
 Conversation Agent - Natural Language Interface for Website Requirements
-
-Conducts intelligent conversations with users to gather comprehensive website requirements
-through industry-specific dialogue flows and smart follow-up questions.
 """
 
 import asyncio
@@ -14,12 +11,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 
-from ..utils.ollama_client import OllamaClient
-
 class ConversationAgent:
     """Professional conversation agent for gathering website requirements"""
     
-    def __init__(self, ollama_client: OllamaClient):
+    def __init__(self, ollama_client):
         self.ollama_client = ollama_client
         self.console = Console()
         self.conversation_history = []
@@ -45,42 +40,52 @@ class ConversationAgent:
     async def analyze_industry_context(self, input_text: str) -> Dict[str, Any]:
         """Analyze user input to determine industry and context"""
         
-        analysis_prompt = f"""
-        Analyze this user input to determine the industry type and context for their website:
+        # Simple keyword-based analysis for now
+        input_lower = input_text.lower()
         
-        User Input: "{input_text}"
-        
-        Return a JSON response with:
-        {{
-            "industry": "restaurant|portfolio|business|ecommerce|blog|corporate|creative|nonprofit|health|tech",
-            "confidence": 0.0-1.0,
-            "summary": "Brief understanding of what they want",
-            "key_indicators": ["list", "of", "indicators"],
-            "suggested_features": ["feature1", "feature2"],
-            "business_type": "specific business type if mentioned"
-        }}
-        
-        Focus on identifying:
-        - Industry type (restaurant, portfolio, business, etc.)
-        - Business goals and objectives
-        - Target audience hints
-        - Specific features mentioned
-        - Professional tone and sophistication level
-        """
-        
-        response = await self.ollama_client.generate_response(analysis_prompt, "mistral:7b-instruct")
-        
-        try:
-            analysis = json.loads(response)
-            return analysis
-        except json.JSONDecodeError:
-            # Fallback analysis
+        if any(word in input_lower for word in ['restaurant', 'food', 'menu', 'dining', 'cafe', 'bar']):
+            return {
+                "industry": "restaurant",
+                "confidence": 0.9,
+                "summary": "I'll help you create a stunning restaurant website that showcases your cuisine and attracts customers",
+                "key_indicators": ["restaurant", "food", "menu"],
+                "suggested_features": ["menu_showcase", "reservations", "location_info"],
+                "business_type": "restaurant"
+            }
+        elif any(word in input_lower for word in ['portfolio', 'designer', 'photographer', 'artist', 'creative', 'work']):
+            return {
+                "industry": "portfolio",
+                "confidence": 0.9,
+                "summary": "I'll help you create a professional portfolio that showcases your work and attracts clients",
+                "key_indicators": ["portfolio", "creative", "work"],
+                "suggested_features": ["work_showcase", "about_section", "contact_form"],
+                "business_type": "creative professional"
+            }
+        elif any(word in input_lower for word in ['shop', 'store', 'ecommerce', 'e-commerce', 'sell', 'products']):
+            return {
+                "industry": "ecommerce",
+                "confidence": 0.9,
+                "summary": "I'll help you create an online store that converts visitors into customers",
+                "key_indicators": ["ecommerce", "store", "products"],
+                "suggested_features": ["product_catalog", "shopping_cart", "checkout"],
+                "business_type": "online store"
+            }
+        elif any(word in input_lower for word in ['blog', 'writing', 'content', 'articles', 'posts']):
+            return {
+                "industry": "blog",
+                "confidence": 0.9,
+                "summary": "I'll help you create a professional blog that engages readers and builds your audience",
+                "key_indicators": ["blog", "content", "writing"],
+                "suggested_features": ["blog_posts", "newsletter", "author_bio"],
+                "business_type": "content creator"
+            }
+        else:
             return {
                 "industry": "business",
-                "confidence": 0.5,
-                "summary": "I'll help you create a professional website",
-                "key_indicators": [],
-                "suggested_features": [],
+                "confidence": 0.7,
+                "summary": "I'll help you create a professional business website that generates leads and builds trust",
+                "key_indicators": ["business", "professional"],
+                "suggested_features": ["services", "about", "contact"],
                 "business_type": "general business"
             }
     
@@ -115,8 +120,6 @@ class ConversationAgent:
             return await self.ecommerce_conversation_flow(requirements)
         elif industry == "blog":
             return await self.blog_conversation_flow(requirements)
-        elif industry == "corporate":
-            return await self.corporate_conversation_flow(requirements)
         else:
             return await self.business_conversation_flow(requirements)
     
@@ -197,19 +200,6 @@ class ConversationAgent:
         
         # Content tone
         requirements["content_tone"] = "welcoming and appetizing"
-        
-        # Specific needs
-        specific_needs = []
-        if Confirm.ask("[cyan]Need to display dietary information (vegan, gluten-free, etc.)?[/cyan]"):
-            specific_needs.append("dietary_information")
-        if Confirm.ask("[cyan]Multiple locations?[/cyan]"):
-            specific_needs.append("multiple_locations")
-        if Confirm.ask("[cyan]Event hosting/catering info?[/cyan]"):
-            specific_needs.append("events_catering")
-        if Confirm.ask("[cyan]Chef profiles or team info?[/cyan]"):
-            specific_needs.append("chef_profiles")
-        
-        requirements["specific_needs"] = specific_needs
         
         # Timeline
         requirements["timeline"] = Prompt.ask(
@@ -292,19 +282,6 @@ class ConversationAgent:
         
         # Content tone
         requirements["content_tone"] = "professional and confident"
-        
-        # Specific needs
-        specific_needs = []
-        if Confirm.ask("[cyan]Need case studies or project details?[/cyan]"):
-            specific_needs.append("case_studies")
-        if Confirm.ask("[cyan]Downloadable resume/CV?[/cyan]"):
-            specific_needs.append("resume_download")
-        if Confirm.ask("[cyan]Client testimonials?[/cyan]"):
-            specific_needs.append("testimonials")
-        if Confirm.ask("[cyan]Award or recognition section?[/cyan]"):
-            specific_needs.append("awards")
-        
-        requirements["specific_needs"] = specific_needs
         
         return requirements
     
@@ -484,64 +461,6 @@ class ConversationAgent:
         
         return requirements
     
-    async def corporate_conversation_flow(self, requirements: Dict[str, Any]) -> Dict[str, Any]:
-        """Corporate-specific conversation flow"""
-        
-        self.console.print("[bold blue]🏢 Corporate Website Requirements[/bold blue]")
-        
-        # Company details
-        requirements["business_name"] = Prompt.ask("[cyan]What's your company name?[/cyan]")
-        
-        # Company type
-        company_type = Prompt.ask("[cyan]What industry are you in?[/cyan]")
-        requirements["description"] = f"Corporate website for {company_type} company"
-        
-        # Target audience
-        target_audience = Prompt.ask(
-            "[cyan]Who needs to find you?[/cyan]",
-            choices=["customers", "investors", "partners", "employees", "media", "stakeholders"]
-        )
-        requirements["target_audience"] = target_audience
-        
-        # Primary goals
-        goals = ["brand_presence", "credibility", "information_sharing"]
-        
-        if Confirm.ask("[cyan]Attract investors?[/cyan]"):
-            goals.append("investor_relations")
-        if Confirm.ask("[cyan]Recruit talent?[/cyan]"):
-            goals.append("talent_acquisition")
-        if Confirm.ask("[cyan]Media and press relations?[/cyan]"):
-            goals.append("media_relations")
-        
-        requirements["primary_goals"] = goals
-        
-        # Key features
-        features = ["hero_section", "company_overview", "services_products", "leadership_team", "news_updates", "contact_info"]
-        
-        if "investor_relations" in goals:
-            features.append("investor_section")
-        if "talent_acquisition" in goals:
-            features.append("careers_section")
-        if "media_relations" in goals:
-            features.append("press_section")
-        
-        requirements["key_features"] = features
-        
-        # Design preferences
-        requirements["design_preferences"] = {
-            "style": "professional",
-            "corporate_identity": True,
-            "trust_building": True
-        }
-        
-        # Color preferences
-        requirements["color_scheme"] = "corporate-professional"
-        
-        # Content tone
-        requirements["content_tone"] = "professional and authoritative"
-        
-        return requirements
-    
     async def validate_and_summarize_requirements(self, requirements: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and summarize the gathered requirements"""
         
@@ -566,5 +485,4 @@ class ConversationAgent:
             return requirements
         else:
             self.console.print("[yellow]Let's refine the requirements...[/yellow]")
-            # Could add refinement logic here
             return requirements
