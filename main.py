@@ -15,6 +15,7 @@ import sys
 import argparse
 import time
 import json
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -35,13 +36,15 @@ from agents.fixer import FixerAgent
 from agents.finalizer import FinalizerAgent
 from agents.git_pusher import GitPusherAgent
 from template_manager import TemplateManager
+from model_orchestrator import get_orchestrator
 
 console = Console()
 
 class Orchestrator:
     def __init__(self):
         self.ollama_client = OllamaClient()
-        self.required_models = ["llama2:7b-chat", "deepseek-coder:33b"]
+        self.orchestrator = get_orchestrator()
+        self.required_models = ["llama2:7b-chat", "deepseek-coder:33b", "codellama:13b-instruct", "mistral:7b-instruct"]
         self.agents = {
             "planner": PlannerAgent(self.ollama_client),
             "builder": BuilderAgent(self.ollama_client),
@@ -122,7 +125,7 @@ From a one-line idea to a fully deployed application - just like a real dev agen
         console.print("\n[green]✅ All prerequisites are met![/green]\n")
         return True
     
-    def run_development_pipeline(self, project_spec_path: str) -> Optional[str]:
+    async def run_development_pipeline(self, project_spec_path: str) -> Optional[str]:
         """Run the complete development pipeline with all agents."""
         console.print("[bold green]🚀 Starting AI Development Team Pipeline[/bold green]\n")
         
@@ -148,7 +151,7 @@ From a one-line idea to a fully deployed application - just like a real dev agen
                 
                 # Execute agent based on type
                 if agent_key == "planner":
-                    technical_spec_path = agent.run(project_spec_path)
+                    technical_spec_path = await agent.run(project_spec_path)
                     if not technical_spec_path:
                         console.print(f"[red]❌ {role} failed - stopping pipeline[/red]")
                         return None
@@ -362,7 +365,7 @@ For more information, visit: https://github.com/ai-dev-team/orchestrator
                 console.print(f"[yellow]⚠️ Template enhancement failed: {e}, using original spec[/yellow]")
         
         # Run development pipeline
-        project_path = orchestrator.run_development_pipeline(project_spec_path)
+        project_path = asyncio.run(orchestrator.run_development_pipeline(project_spec_path))
         
         if project_path:
             orchestrator.display_completion_summary(project_path)

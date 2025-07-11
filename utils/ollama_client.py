@@ -113,6 +113,22 @@ class OllamaClient:
             console.print(f"[red]Unexpected error in generate: {e}[/red]")
             return None
     
+    def generate_response(self, model: str, prompt: str, max_tokens: Optional[int] = None, 
+                         temperature: float = 0.7) -> str:
+        """Generate response for orchestrator (synchronous version)."""
+        result = self.generate(model, prompt, temperature=temperature, max_tokens=max_tokens)
+        return result if result else ""
+    
+    def list_models(self) -> list:
+        """List all available models."""
+        try:
+            response = requests.get(f"{self.api_url}/tags", timeout=10)
+            if response.status_code == 200:
+                return response.json().get("models", [])
+            return []
+        except requests.exceptions.RequestException:
+            return []
+    
     def generate_chunked(self, model: str, prompt: str, system: Optional[str] = None, 
                         temperature: float = 0.7, chunk_size: int = 4000) -> Optional[str]:
         """Generate response in chunks for very large prompts."""

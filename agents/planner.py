@@ -1,18 +1,20 @@
 import json
 import os
 import re
+import asyncio
 from typing import Dict, Any, Optional
 from rich.console import Console
 from rich.panel import Panel
 
 from utils.ollama_client import OllamaClient
+from model_orchestrator import get_orchestrator, TaskType
 
 console = Console()
 
 class PlannerAgent:
     def __init__(self, ollama_client: OllamaClient):
         self.ollama_client = ollama_client
-        self.model = "llama2:7b-chat"
+        self.orchestrator = get_orchestrator()
         self.agent_name = "Planner (Product Manager)"
     
     def _clean_json_string(self, json_str: str) -> str:
@@ -43,7 +45,7 @@ class PlannerAgent:
             console.print("[red]Error: planner_prompt.txt not found[/red]")
             return ""
     
-    def analyze_requirements(self, project_spec_path: str) -> Optional[Dict[str, Any]]:
+    async def analyze_requirements(self, project_spec_path: str) -> Optional[Dict[str, Any]]:
         """Analyze project requirements and create detailed technical specifications."""
         console.print(Panel(
             f"🔍 {self.agent_name} is analyzing project requirements...",
@@ -96,13 +98,23 @@ Respond with a comprehensive JSON specification following the format specified i
             if attempt > 0:
                 console.print(f"[yellow]Retry attempt {attempt + 1}/3 with temperature {temperature}[/yellow]")
             
-            # Generate specifications using Ollama
-            response = self.ollama_client.generate(
-                model=self.model,
-                prompt=user_prompt,
-                system=system_prompt,
-                temperature=temperature
-            )
+            # Generate specifications using orchestrator
+            if asyncio.iscoroutinefunction(self.orchestrator.execute_task):
+                # Async version
+                task_result = await self.orchestrator.execute_task(
+                    TaskType.PLANNING,
+                    user_prompt,
+                    "complex" if attempt == 0 else "medium"
+                )
+                response = task_result.result
+            else:
+                # Fallback to direct Ollama client
+                response = self.ollama_client.generate(
+                    model="llama2:7b-chat",
+                    prompt=user_prompt,
+                    system=system_prompt,
+                    temperature=temperature
+                )
             
             if not response:
                 console.print("[red]Failed to generate response from model[/red]")
@@ -312,12 +324,12 @@ Respond with a comprehensive JSON specification following the format specified i
             phases_count = len(technical_spec["development_phases"])
             console.print(f"[bold magenta]Development Phases:[/bold magenta] {phases_count} phases planned")
     
-    def run(self, project_spec_path: str) -> Optional[str]:
+    async def run(self, project_spec_path: str) -> Optional[str]:
         """Run the planner agent and return the path to the technical specification."""
         console.print(f"\n[bold blue]🔄 Starting {self.agent_name}[/bold blue]")
         
         # Analyze requirements and generate technical specifications
-        technical_spec = self.analyze_requirements(project_spec_path)
+        technical_spec = await self.analyze_requirements(project_spec_path)
         
         if not technical_spec:
             console.print("[red]❌ Failed to generate technical specifications[/red]")
