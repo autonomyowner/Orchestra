@@ -14,6 +14,7 @@ import os
 import sys
 import argparse
 import time
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -33,6 +34,7 @@ from agents.reviewer import ReviewerAgent
 from agents.fixer import FixerAgent
 from agents.finalizer import FinalizerAgent
 from agents.git_pusher import GitPusherAgent
+from template_manager import TemplateManager
 
 console = Console()
 
@@ -48,6 +50,7 @@ class Orchestrator:
             "finalizer": FinalizerAgent(self.ollama_client),
             "git_pusher": GitPusherAgent(self.ollama_client)
         }
+        self.template_manager = TemplateManager()
         
     def display_welcome(self):
         """Display the welcome banner and team introduction."""
@@ -321,6 +324,42 @@ For more information, visit: https://github.com/ai-dev-team/orchestrator
             if not project_spec_path:
                 console.print("[yellow]Wizard cancelled or failed. Exiting.[/yellow]")
                 sys.exit(1)
+            
+            # Check if template was selected and enhance the spec
+            try:
+                with open(project_spec_path, 'r') as f:
+                    spec_data = json.load(f)
+                
+                if spec_data.get("template_type") and spec_data["template_type"] != "custom":
+                    console.print(f"\n[bold green]🎯 Using {spec_data['template_type'].upper()} Template[/bold green]")
+                    
+                    # Create template instance
+                    template = orchestrator.template_manager.get_template(
+                        spec_data["template_type"],
+                        spec_data["project_name"],
+                        spec_data.get("description", "")
+                    )
+                    
+                    if template:
+                        # Get template specification
+                        template_spec = orchestrator.template_manager.get_template_spec(template)
+                        
+                        # Merge template spec with wizard data
+                        merged_spec = {**template_spec, **spec_data}
+                        
+                        # Save enhanced specification
+                        with open(project_spec_path, 'w') as f:
+                            json.dump(merged_spec, f, indent=2, default=str)
+                        
+                        console.print(f"[green]✅ Enhanced with {spec_data['template_type']} template features[/green]")
+                        
+                        # Show template summary
+                        summary = orchestrator.template_manager.generate_template_summary(template)
+                        console.print(f"[blue]📊 Template Summary: {summary['total_features']} features, {summary['total_pages']} pages, {summary['complexity']} complexity[/blue]")
+                    else:
+                        console.print(f"[yellow]⚠️ Template '{spec_data['template_type']}' not found, using custom spec[/yellow]")
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Template enhancement failed: {e}, using original spec[/yellow]")
         
         # Run development pipeline
         project_path = orchestrator.run_development_pipeline(project_spec_path)

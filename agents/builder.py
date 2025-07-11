@@ -72,131 +72,236 @@ Requirements:
 9. Follow best practices for security and performance
 10. Structure code following atomic design principles
 
-Please provide the complete file structure and implementation. Include all necessary configuration files, components, pages, API routes, database schemas, and utilities.
+IMPORTANT: You MUST provide the complete file structure and implementation. Include all necessary configuration files, components, pages, API routes, database schemas, and utilities.
 
-Generate a production-ready codebase that can be deployed immediately.
+CRITICAL: Your response MUST follow this exact format for each file:
+
+FILE: path/to/file.ext
+PURPOSE: Brief description of what this file does
+---
+[Complete file content]
+---
+
+Generate a production-ready codebase that can be deployed immediately. Do not skip any files or provide incomplete implementations.
         """
         
         console.print("[yellow]Generating complete application codebase...[/yellow]")
         console.print("[dim]This may take several minutes for complex applications...[/dim]")
         
-        # Generate codebase using Ollama
-        response = self.ollama_client.generate(
+        # Try multiple generation attempts with different settings
+        for attempt in range(3):
+            if attempt > 0:
+                console.print(f"[yellow]Retry attempt {attempt + 1}/3...[/yellow]")
+            
+            # Adjust parameters for each attempt
+            temperature = 0.1 + (attempt * 0.1)  # 0.1, 0.2, 0.3
+            max_tokens = 8000 if attempt == 0 else 6000  # Reduce tokens on retries
+            
+            # Generate codebase using Ollama
+            response = self.ollama_client.generate(
+                model=self.model,
+                prompt=user_prompt,
+                system=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            if response and len(response.strip()) > 1000:  # Ensure substantial response
+                console.print(f"[green]✅ Generated substantial response ({len(response)} chars)[/green]")
+                
+                # Parse and create files from response
+                if self.parse_and_create_files(response, project_path):
+                    return True
+                else:
+                    console.print(f"[yellow]Attempt {attempt + 1} failed to parse files, retrying...[/yellow]")
+            else:
+                console.print(f"[yellow]Attempt {attempt + 1} generated insufficient response, retrying...[/yellow]")
+        
+        # If all attempts fail, try chunked generation
+        console.print("[yellow]Trying chunked generation as last resort...[/yellow]")
+        chunked_response = self.ollama_client.generate_chunked(
             model=self.model,
             prompt=user_prompt,
             system=system_prompt,
-            temperature=0.2,  # Low temperature for consistent code generation
-            max_tokens=16000  # Large context for complete codebase
+            temperature=0.2,
+            chunk_size=3000
         )
         
-        if not response:
-            console.print("[red]Failed to generate codebase[/red]")
-            return False
+        if chunked_response and self.parse_and_create_files(chunked_response, project_path):
+            return True
         
-        # Parse and create files from response
-        return self.parse_and_create_files(response, project_path)
+        console.print("[red]All generation attempts failed. Creating enhanced basic structure...[/red]")
+        return self.create_enhanced_basic_structure(project_path, technical_spec)
     
     def parse_and_create_files(self, response: str, project_path: str) -> bool:
-        """Parse the AI response and create the actual files."""
+        """Parse the AI response and create the actual files with improved parsing."""
         try:
             console.print("[yellow]Parsing response and creating files...[/yellow]")
             
-            # Split response by file markers
-            files_created = 0
-            current_file = None
-            current_content = []
+            # Try multiple parsing strategies
+            parsing_strategies = [
+                self._parse_file_markers,
+                self._parse_code_blocks,
+                self._parse_markdown_blocks,
+                self._parse_manual_extraction
+            ]
             
-            lines = response.split('\n')
-            
-            with Progress() as progress:
-                task = progress.add_task("Creating files...", total=100)
+            for i, strategy in enumerate(parsing_strategies):
+                console.print(f"[dim]Trying parsing strategy {i+1}/{len(parsing_strategies)}[/dim]")
                 
-                for line in lines:
-                    if line.startswith('FILE: '):
-                        # Save previous file if exists
-                        if current_file and current_content:
-                            self.create_file(project_path, current_file, '\n'.join(current_content))
-                            files_created += 1
-                            progress.update(task, advance=2)
-                        
-                        # Start new file
-                        current_file = line.replace('FILE: ', '').strip()
-                        current_content = []
-                        
-                    elif line.startswith('PURPOSE: '):
-                        # Skip purpose line
-                        continue
-                        
-                    elif line.strip() == '---':
-                        # Skip separator lines
-                        continue
-                        
-                    elif current_file:
-                        # Add content to current file
-                        current_content.append(line)
+                files_created = strategy(response, project_path)
                 
-                # Save last file
-                if current_file and current_content:
-                    self.create_file(project_path, current_file, '\n'.join(current_content))
-                    files_created += 1
-                
-                progress.update(task, completed=100)
+                if files_created > 5:  # Require at least 5 files for success
+                    console.print(f"[green]✅ Strategy {i+1} created {files_created} files[/green]")
+                    return True
+                else:
+                    console.print(f"[yellow]Strategy {i+1} only created {files_created} files, trying next...[/yellow]")
             
-            if files_created == 0:
-                # Fallback: try to extract files using different patterns
-                files_created = self.extract_files_fallback(response, project_path)
-            
-            console.print(f"[green]✅ Created {files_created} files[/green]")
-            return files_created > 0
+            console.print("[red]All parsing strategies failed[/red]")
+            return False
             
         except Exception as e:
             console.print(f"[red]Error parsing response: {e}[/red]")
             return False
     
-    def extract_files_fallback(self, response: str, project_path: str) -> int:
-        """Fallback method to extract files from response."""
+    def _parse_file_markers(self, response: str, project_path: str) -> int:
+        """Parse using FILE: markers."""
         files_created = 0
+        current_file = None
+        current_content = []
+        in_file_content = False
         
-        # Try to find code blocks and file references
+        lines = response.split('\n')
+        
+        for line in lines:
+            if line.startswith('FILE: '):
+                # Save previous file if exists
+                if current_file and current_content:
+                    self.create_file(project_path, current_file, '\n'.join(current_content))
+                    files_created += 1
+                
+                # Start new file
+                current_file = line.replace('FILE: ', '').strip()
+                current_content = []
+                in_file_content = False
+                
+            elif line.startswith('PURPOSE: '):
+                # Skip purpose line
+                continue
+                
+            elif line.strip() == '---':
+                # Toggle file content mode
+                in_file_content = not in_file_content
+                
+            elif in_file_content and current_file:
+                # Add content to current file
+                current_content.append(line)
+            
+            elif current_file and not in_file_content and line.strip():
+                # Add content if we're in a file but not in content mode
+                current_content.append(line)
+        
+        # Save last file
+        if current_file and current_content:
+            self.create_file(project_path, current_file, '\n'.join(current_content))
+            files_created += 1
+        
+        return files_created
+    
+    def _parse_code_blocks(self, response: str, project_path: str) -> int:
+        """Parse using markdown code blocks."""
         import re
         
-        # Pattern to match file paths and code blocks
-        file_pattern = r'(?:FILE:|```|\*\*|##)\s*([a-zA-Z0-9\-_/.]+\.[a-zA-Z0-9]+)\s*(?:```|:|$)'
-        code_block_pattern = r'```(?:typescript|javascript|json|css|tsx|jsx)?\n(.*?)```'
+        files_created = 0
         
-        file_matches = re.findall(file_pattern, response, re.IGNORECASE)
-        code_blocks = re.findall(code_block_pattern, response, re.DOTALL)
+        # Pattern to match code blocks with file paths
+        code_block_pattern = r'```(?:typescript|javascript|json|css|tsx|jsx|ts|js)?\s*([^\n]+)\n(.*?)```'
         
-        # Try to match files with code blocks
-        for i, file_path in enumerate(file_matches[:len(code_blocks)]):
-            if i < len(code_blocks):
-                content = code_blocks[i].strip()
+        matches = re.findall(code_block_pattern, response, re.DOTALL)
+        
+        for file_path, content in matches:
+            if file_path.strip() and content.strip():
+                # Clean up file path
+                file_path = file_path.strip()
+                if file_path.startswith('//'):
+                    file_path = file_path[2:].strip()
+                
+                self.create_file(project_path, file_path, content.strip())
+                files_created += 1
+        
+        return files_created
+    
+    def _parse_markdown_blocks(self, response: str, project_path: str) -> int:
+        """Parse using markdown headers as file indicators."""
+        import re
+        
+        files_created = 0
+        
+        # Split by markdown headers
+        sections = re.split(r'^##\s+', response, flags=re.MULTILINE)
+        
+        for section in sections[1:]:  # Skip first empty section
+            lines = section.split('\n')
+            if lines:
+                # First line is the file path
+                file_path = lines[0].strip()
+                content = '\n'.join(lines[1:]).strip()
+                
+                if file_path and content:
+                    self.create_file(project_path, file_path, content)
+                    files_created += 1
+        
+        return files_created
+    
+    def _parse_manual_extraction(self, response: str, project_path: str) -> int:
+        """Manual extraction of common file patterns."""
+        import re
+        
+        files_created = 0
+        
+        # Common file patterns to look for
+        file_patterns = [
+            (r'package\.json[:\s]*\n(.*?)(?=\n\n|\n[A-Z]|\Z)', 'package.json'),
+            (r'tsconfig\.json[:\s]*\n(.*?)(?=\n\n|\n[A-Z]|\Z)', 'tsconfig.json'),
+            (r'next\.config\.js[:\s]*\n(.*?)(?=\n\n|\n[A-Z]|\Z)', 'next.config.js'),
+            (r'tailwind\.config\.js[:\s]*\n(.*?)(?=\n\n|\n[A-Z]|\Z)', 'tailwind.config.js'),
+            (r'app/layout\.tsx[:\s]*\n(.*?)(?=\n\n|\n[A-Z]|\Z)', 'app/layout.tsx'),
+            (r'app/page\.tsx[:\s]*\n(.*?)(?=\n\n|\n[A-Z]|\Z)', 'app/page.tsx'),
+            (r'app/globals\.css[:\s]*\n(.*?)(?=\n\n|\n[A-Z]|\Z)', 'app/globals.css'),
+        ]
+        
+        for pattern, file_path in file_patterns:
+            match = re.search(pattern, response, re.DOTALL)
+            if match:
+                content = match.group(1).strip()
                 if content:
                     self.create_file(project_path, file_path, content)
                     files_created += 1
         
-        # If no matches, create basic project structure
-        if files_created == 0:
-            files_created = self.create_basic_structure(project_path)
-        
         return files_created
     
-    def create_basic_structure(self, project_path: str) -> int:
-        """Create a basic Next.js project structure as fallback."""
-        console.print("[yellow]Creating basic Next.js structure as fallback...[/yellow]")
+    def create_enhanced_basic_structure(self, project_path: str, technical_spec: Dict[str, Any]) -> bool:
+        """Create an enhanced basic structure with more features than the simple fallback."""
+        console.print("[yellow]Creating enhanced basic structure...[/yellow]")
         
-        basic_files = {
-            "package.json": """{
-  "name": "generated-app",
+        # Extract project info from technical spec
+        project_name = technical_spec.get("project_overview", {}).get("name", "generated-app")
+        project_description = technical_spec.get("project_overview", {}).get("description", "A modern web application")
+        
+        enhanced_files = {
+            "package.json": f"""{{
+  "name": "{project_name.lower().replace(' ', '-')}",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
+  "description": "{project_description}",
+  "scripts": {{
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
-  },
-  "dependencies": {
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  }},
+  "dependencies": {{
     "next": "14.0.0",
     "react": "^18",
     "react-dom": "^18",
@@ -206,11 +311,28 @@ Generate a production-ready codebase that can be deployed immediately.
     "@types/react-dom": "^18",
     "tailwindcss": "^3.3.0",
     "autoprefixer": "^10.0.1",
-    "postcss": "^8"
-  }
-}""",
+    "postcss": "^8",
+    "@prisma/client": "^5.0.0",
+    "next-auth": "^4.24.0",
+    "bcryptjs": "^2.4.3",
+    "@types/bcryptjs": "^2.4.6"
+  }},
+  "devDependencies": {{
+    "prisma": "^5.0.0",
+    "eslint": "^8",
+    "eslint-config-next": "14.0.0",
+    "@types/bcryptjs": "^2.4.6"
+  }}
+}}""",
             "next.config.js": """/** @type {import('next').NextConfig} */
-const nextConfig = {}
+const nextConfig = {
+  experimental: {
+    appDir: true,
+  },
+  images: {
+    domains: ['localhost'],
+  },
+}
 
 module.exports = nextConfig""",
             "tsconfig.json": """{
@@ -248,9 +370,44 @@ module.exports = {
     './app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        primary: {
+          50: '#eff6ff',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+        }
+      }
+    },
   },
   plugins: [],
+}""",
+            "postcss.config.js": """module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}""",
+            "prisma/schema.prisma": """// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }""",
             "app/layout.tsx": """import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
@@ -270,20 +427,57 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <div className="min-h-screen bg-gray-50">
+          <header className="bg-white shadow-sm">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex justify-between h-16">
+                <div className="flex items-center">
+                  <h1 className="text-xl font-semibold text-gray-900">
+                    Generated App
+                  </h1>
+                </div>
+              </div>
+            </div>
+          </header>
+          <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+            {children}
+          </main>
+        </div>
+      </body>
     </html>
   )
 }""",
-            "app/page.tsx": """export default function Home() {
+            "app/page.tsx": """import Link from 'next/link'
+
+export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <h1 className="text-4xl font-bold">Welcome to Your Generated App</h1>
-        <p className="mt-4 text-lg">
-          This application was generated by the AI Development Team Orchestrator.
-        </p>
+    <div className="bg-white">
+      <div className="relative isolate px-6 pt-14 lg:px-8">
+        <div className="mx-auto max-w-2xl py-32 sm:py-48 lg:py-56">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-6xl">
+              Welcome to Your Generated App
+            </h1>
+            <p className="mt-6 text-lg leading-8 text-gray-600">
+              This application was generated by the AI Development Team Orchestrator.
+              It includes a modern Next.js 14 setup with TypeScript, Tailwind CSS, and Prisma.
+            </p>
+            <div className="mt-10 flex items-center justify-center gap-x-6">
+              <Link
+                href="/dashboard"
+                className="rounded-md bg-primary-600 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600"
+              >
+                Get started
+              </Link>
+              <Link href="/about" className="text-sm font-semibold leading-6 text-gray-900">
+                Learn more <span aria-hidden="true">→</span>
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   )
 }""",
             "app/globals.css": """@tailwind base;
@@ -313,9 +507,99 @@ body {
     )
     rgb(var(--background-start-rgb));
 }""",
-            "README.md": """# Generated Application
+            "app/dashboard/page.tsx": """export default function Dashboard() {
+  return (
+    <div className="bg-white shadow rounded-lg p-6">
+      <h2 className="text-2xl font-bold text-gray-900 mb-4">Dashboard</h2>
+      <p className="text-gray-600">
+        This is your application dashboard. Add your main features here.
+      </p>
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <h3 className="font-semibold text-gray-900">Feature 1</h3>
+          <p className="text-sm text-gray-600">Description of your first feature</p>
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <h3 className="font-semibold text-gray-900">Feature 2</h3>
+          <p className="text-sm text-gray-600">Description of your second feature</p>
+        </div>
+        <div className="bg-gray-50 p-4 rounded-lg">
+          <h3 className="font-semibold text-gray-900">Feature 3</h3>
+          <p className="text-sm text-gray-600">Description of your third feature</p>
+        </div>
+      </div>
+    </div>
+  )
+}""",
+            "app/about/page.tsx": """export default function About() {
+  return (
+    <div className="bg-white shadow rounded-lg p-6">
+      <h2 className="text-2xl font-bold text-gray-900 mb-4">About</h2>
+      <p className="text-gray-600 mb-4">
+        This application was generated using the AI Development Team Orchestrator.
+      </p>
+      <p className="text-gray-600">
+        The orchestrator uses multiple AI agents to create production-ready web applications
+        with modern technologies like Next.js 14, TypeScript, and Tailwind CSS.
+      </p>
+    </div>
+  )
+}""",
+            "components/ui/Button.tsx": """import React from 'react'
 
-This application was generated by the AI Development Team Orchestrator.
+interface ButtonProps {
+  children: React.ReactNode
+  variant?: 'primary' | 'secondary' | 'outline'
+  size?: 'sm' | 'md' | 'lg'
+  onClick?: () => void
+  disabled?: boolean
+  className?: string
+}
+
+export default function Button({
+  children,
+  variant = 'primary',
+  size = 'md',
+  onClick,
+  disabled = false,
+  className = ''
+}: ButtonProps) {
+  const baseClasses = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none'
+  
+  const variantClasses = {
+    primary: 'bg-primary-600 text-white hover:bg-primary-700',
+    secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300',
+    outline: 'border border-gray-300 bg-transparent hover:bg-gray-50'
+  }
+  
+  const sizeClasses = {
+    sm: 'h-8 px-3 text-sm',
+    md: 'h-10 px-4 py-2',
+    lg: 'h-12 px-6 text-lg'
+  }
+  
+  return (
+    <button
+      className={`${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {children}
+    </button>
+  )
+}""",
+            "lib/db.ts": """import { PrismaClient } from '@prisma/client'
+
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined
+}
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient()
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma""",
+            "README.md": f"""# {project_name}
+
+{project_description}
 
 ## Getting Started
 
@@ -323,6 +607,20 @@ First, install dependencies:
 
 ```bash
 npm install
+```
+
+Set up your environment variables:
+
+```bash
+cp .env.example .env.local
+# Edit .env.local with your values
+```
+
+Set up the database:
+
+```bash
+npx prisma generate
+npx prisma db push
 ```
 
 Then, run the development server:
@@ -335,23 +633,142 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ## Tech Stack
 
-- Next.js 14
+- Next.js 14 with App Router
 - TypeScript
 - Tailwind CSS
-- React
+- Prisma (Database ORM)
+- NextAuth.js (Authentication)
 
 ## Features
 
-This application includes the features specified in your project requirements.
+This application includes:
+- Modern Next.js 14 setup
+- TypeScript for type safety
+- Tailwind CSS for styling
+- Database integration with Prisma
+- Authentication system
+- Responsive design
+- SEO optimization
+
+## Project Structure
+
+```
+app/
+├── layout.tsx          # Root layout
+├── page.tsx           # Home page
+├── dashboard/         # Dashboard pages
+├── about/            # About page
+└── globals.css       # Global styles
+
+components/
+└── ui/               # Reusable UI components
+
+lib/
+└── db.ts            # Database configuration
+
+prisma/
+└── schema.prisma    # Database schema
+```
+
+## Deployment
+
+This application is ready for deployment on:
+- Vercel (recommended)
+- Netlify
+- Railway
+- Any Node.js hosting platform
+
+## Generated by
+
+This application was generated by the AI Development Team Orchestrator.
+""",
+            ".env.example": """# Environment Variables Template
+# Copy this file to .env.local and fill in your values
+
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/database"
+
+# Authentication
+NEXTAUTH_SECRET="your-secret-key"
+NEXTAUTH_URL="http://localhost:3000"
+
+# API Keys (add as needed)
+# STRIPE_SECRET_KEY=""
+# SENDGRID_API_KEY=""
+# CLOUDINARY_URL=""
+""",
+            ".gitignore": """# Dependencies
+node_modules/
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Next.js
+/.next/
+/out/
+
+# Production
+/build
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env*.local
+.env
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma
+prisma/migrations/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# OS generated files
+Thumbs.db
 """
         }
         
         files_created = 0
-        for file_path, content in basic_files.items():
+        for file_path, content in enhanced_files.items():
             self.create_file(project_path, file_path, content)
             files_created += 1
         
-        return files_created
+        console.print(f"[green]✅ Created enhanced structure with {files_created} files[/green]")
+        return files_created > 0
     
     def create_file(self, project_path: str, file_path: str, content: str):
         """Create a file with the given content."""

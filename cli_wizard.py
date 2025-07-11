@@ -47,14 +47,38 @@ Let's start building your dream project!
             default="A web application"
         )
         
-        self.project_data["purpose"] = Prompt.ask(
-            "What is the main purpose of this website?",
-            choices=["saas", "ecommerce", "portfolio", "blog", "marketplace", "social", "other"],
+        # Template selection
+        console.print("\n[bold green]🎯 Project Templates Available:[/bold green]")
+        templates = {
+            "saas": "SaaS Platform - Billing, user management, analytics",
+            "ecommerce": "E-commerce Store - Products, cart, payments",
+            "blog": "Blog Platform - Content management, SEO",
+            "portfolio": "Portfolio Website - Project showcase, contact",
+            "dashboard": "Data Dashboard - Analytics, visualization",
+            "social": "Social Platform - User profiles, posts, interactions",
+            "custom": "Custom Template - Build from scratch"
+        }
+        
+        for key, desc in templates.items():
+            console.print(f"  • {key.upper()}: {desc}")
+        
+        self.project_data["template_type"] = Prompt.ask(
+            "Choose a template type",
+            choices=list(templates.keys()),
             default="saas"
         )
         
-        if self.project_data["purpose"] == "other":
-            self.project_data["custom_purpose"] = Prompt.ask("Please describe the purpose")
+        if self.project_data["template_type"] == "custom":
+            self.project_data["purpose"] = Prompt.ask(
+                "What is the main purpose of this website?",
+                choices=["saas", "ecommerce", "portfolio", "blog", "marketplace", "social", "other"],
+                default="saas"
+            )
+            
+            if self.project_data["purpose"] == "other":
+                self.project_data["custom_purpose"] = Prompt.ask("Please describe the purpose")
+        else:
+            self.project_data["purpose"] = self.project_data["template_type"]
     
     def ask_target_audience(self):
         """Collect target audience information."""
