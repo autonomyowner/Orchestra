@@ -11,14 +11,23 @@ sys.path.append(os.getcwd())
 os.environ['OPENAI_API_KEY'] = os.environ.get('OPENAI_API_KEY', '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')
 os.environ['OPENAI_BASE_URL'] = 'https://openrouter.ai/api/v1'
 
-from core.openrouter_client import OpenRouterClient
-from main import CreativeFrontendSystem
+from core import openrouter_client as orc_module
 from rich.console import Console
+from main import CreativeFrontendSystem
+
 console = Console()
 
-# Patch OpenRouterClient globally
-OpenRouterClient.task_model_mapping = {k: 'openai/gpt-4o' for k in OpenRouterClient.task_model_mapping}
-OpenRouterClient.fallback_models = ['openai/gpt-4o']
+# --- Force GPT-4 Omni by subclassing ---
+
+class GPT4Client(orc_module.OpenRouterClient):
+    """Override model selection to always use GPT-4 Omni."""
+    fallback_models = ["openai/gpt-4o"]
+
+    def get_optimal_model(self, task_type: str, complexity: str = "medium") -> str:
+        return "openai/gpt-4o"
+
+# Monkey-patch module so any import uses GPT4Client
+orc_module.OpenRouterClient = GPT4Client
 
 async def main():
     console.print("[bold green]🚀 Building الغلة agricultural marketplace using GPT-4 Omni only...[/bold green]")
