@@ -1,0 +1,24 @@
+# OpenRouter API Configuration
+OPENAI_API_KEY=your-openrouter-api-key-here
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+
+# Model Selection (OpenRouter Models)
+ARCHITECT_MODEL=anthropic/claude-3.5-sonnet
+FRONTEND_MODEL=openai/gpt-4o
+BACKEND_MODEL=anthropic/claude-3.5-sonnet
+DATABASE_MODEL=openai/gpt-4o
+DEPLOYMENT_MODEL=anthropic/claude-3.5-sonnet
+QUALITY_MODEL=openai/gpt-4o
+
+# Fallback Models (if primary fails)
+FALLBACK_MODELS=openai/gpt-4o,anthropic/claude-3.5-sonnet,google/gemini-pro
+
+# Cost Optimization
+MAX_TOKENS_PER_REQUEST=4000
+ENABLE_COST_OPTIMIZATION=true
+USE_CHEAPER_MODELS_FOR_SIMPLE_TASKS=true
+
+# Project Settings
+DEFAULT_OUTPUT_DIR=generated_projects
+ENABLE_REAL_TIME_PROGRESS=true
+SAVE_INTERMEDIATE_RESULTS=true 

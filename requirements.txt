@@ -1,0 +1,6 @@
+openai
+anthropic
+jinja2
+google-generativeai
+rich
+dotenv 
